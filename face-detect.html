@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Face Strings</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400;1,700&family=Inconsolata:wght@300;400&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --void: #03020a;
+    --paper: #f0e8d8;
+    --gold:  #f0b840;
+    --rose:  #e84870;
+    --mint:  #38d4a0;
+    --sky:   #38a0f0;
+    --lilac: #c060f0;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--void);
+    overflow: hidden;
+    font-family: 'Inconsolata', monospace;
+    color: var(--paper);
+  }
+
+  /* ── SPLASH ── */
+  #splash {
+    position: fixed; inset: 0; z-index: 30;
+    background: var(--void);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 0;
+    transition: opacity 1.2s ease, visibility 1.2s;
+  }
+  #splash.gone { opacity: 0; visibility: hidden; pointer-events: none; }
+
+  .splash-title {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: clamp(3.5rem, 12vw, 8rem);
+    line-height: 0.88;
+    letter-spacing: -3px;
+    margin-bottom: 32px;
+    position: relative;
+  }
+  .splash-title .word1 { color: var(--paper); display: block; }
+  .splash-title .word2 {
+    color: transparent;
+    -webkit-text-stroke: 1.5px var(--gold);
+    display: block;
+    padding-left: 0.18em;
+  }
+
+  .splash-sub {
+    font-size: 0.68rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(240,232,216,0.35);
+    line-height: 2.2;
+    text-align: center;
+    margin-bottom: 52px;
+  }
+
+  .splash-features {
+    display: flex;
+    gap: 32px;
+    margin-bottom: 52px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .feat {
+    font-size: 0.62rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    border: 1px solid rgba(240,232,216,0.12);
+    color: rgba(240,232,216,0.4);
+  }
+  .feat span { color: var(--gold); }
+
+  #startBtn {
+    background: none;
+    border: 1px solid var(--gold);
+    color: var(--gold);
+    font-family: 'Inconsolata', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    padding: 18px 56px;
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+  #startBtn::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: var(--gold);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+    z-index: -1;
+  }
+  #startBtn:hover { color: var(--void); }
+  #startBtn:hover::before { transform: scaleX(1); }
+
+  /* ── SCENE ── */
+  #canvas {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+
+  video {
+    position: fixed; width: 1px; height: 1px;
+    opacity: 0; pointer-events: none;
+  }
+
+  /* ── HUD ── */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 18px 24px;
+    pointer-events: none; z-index: 10;
+    opacity: 0; transition: opacity 1s;
+  }
+  #hud.visible { opacity: 1; }
+
+  .hud-title {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 1.1rem;
+    color: rgba(240,232,216,0.3);
+    letter-spacing: 0.02em;
+  }
+
+  .hud-mode {
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--gold);
+    opacity: 0.6;
+  }
+
+  #status {
+    position: fixed; bottom: 20px; left: 0; right: 0;
+    text-align: center;
+    font-size: 0.62rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(240,232,216,0.2);
+    pointer-events: none; z-index: 10;
+  }
+
+  /* gesture indicators */
+  #gestures {
+    position: fixed; bottom: 48px; left: 0; right: 0;
+    display: flex; justify-content: center; gap: 24px;
+    pointer-events: none; z-index: 10;
+    opacity: 0; transition: opacity 0.5s;
+  }
+  #gestures.visible { opacity: 1; }
+
+  .gesture-chip {
+    font-size: 0.58rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 5px 14px;
+    border: 1px solid;
+    border-radius: 0;
+    transition: all 0.3s;
+    opacity: 0.25;
+  }
+  .gesture-chip.active { opacity: 1; }
+  .gc-brow  { border-color: var(--sky);   color: var(--sky);   }
+  .gc-mouth { border-color: var(--rose);  color: var(--rose);  }
+  .gc-eyes  { border-color: var(--mint);  color: var(--mint);  }
+  .gc-jaw   { border-color: var(--lilac); color: var(--lilac); }
+  .gc-nose  { border-color: var(--gold);  color: var(--gold);  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<video id="vid" autoplay playsinline muted></video>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-title">
+    <span class="word1">Face</span>
+    <span class="word2">Strings</span>
+  </div>
+  <p class="splash-sub">
+    your face becomes an instrument<br>
+    features are nodes · expressions pull the strings
+  </p>
+  <div class="splash-features">
+    <div class="feat"><span>↑</span> raise eyebrows</div>
+    <div class="feat"><span>○</span> open mouth</div>
+    <div class="feat"><span>◡</span> smile wide</div>
+    <div class="feat"><span>~</span> tilt head</div>
+  </div>
+  <button id="startBtn">start · allow camera</button>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="hud-title">Face Strings</div>
+  <div class="hud-mode">face mesh · elastic</div>
+</div>
+
+<!-- Gesture indicators -->
+<div id="gestures">
+  <div class="gesture-chip gc-brow"  id="gc-brow">brows</div>
+  <div class="gesture-chip gc-mouth" id="gc-mouth">mouth</div>
+  <div class="gesture-chip gc-eyes"  id="gc-eyes">eyes</div>
+  <div class="gesture-chip gc-jaw"   id="gc-jaw">jaw</div>
+  <div class="gesture-chip gc-nose"  id="gc-nose">nose</div>
+</div>
+
+<div id="status">loading…</div>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CANVAS
+// ─────────────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const vid    = document.getElementById('vid');
+const statusEl = document.getElementById('status');
+const hud    = document.getElementById('hud');
+const gesturesEl = document.getElementById('gestures');
+
+let W, H;
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FACE MESH LANDMARK GROUPS
+// MediaPipe Face Mesh has 468 landmarks.
+// We use specific landmark indices for facial features.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Key anchor groups (landmark indices)
+const FACE_ANCHORS = {
+  // Left eyebrow (viewer's right)
+  leftBrow:  [70, 63, 105, 66, 107],
+  // Right eyebrow (viewer's left)
+  rightBrow: [300, 293, 334, 296, 336],
+  // Left eye
+  leftEye:   [33, 160, 158, 133, 153, 144],
+  // Right eye
+  rightEye:  [362, 385, 387, 263, 373, 380],
+  // Upper lip
+  upperLip:  [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291],
+  // Lower lip
+  lowerLip:  [146, 91, 181, 84, 17, 314, 405, 321, 375, 291],
+  // Jaw outline (subset)
+  jaw:       [172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397],
+  // Nose bridge + tip
+  nose:      [168, 6, 197, 195, 5, 4, 1, 2, 98, 327],
+  // Cheek bones
+  leftCheek:  [116, 123, 147, 187, 207],
+  rightCheek: [345, 352, 376, 411, 427],
+};
+
+// String connections: [groupA, groupB, color, stiffness, opacity]
+const STRING_CONFIGS = [
+  // Eyebrow ↔ eye (top of eye to brow) — sky blue
+  { a: 'leftBrow',  b: 'leftEye',   color: '#38a0f0', k: 0.22, label: 'brow' },
+  { a: 'rightBrow', b: 'rightEye',  color: '#38a0f0', k: 0.22, label: 'brow' },
+  // Left ↔ right brow (forehead span) — gold
+  { a: 'leftBrow',  b: 'rightBrow', color: '#f0b840', k: 0.10, label: 'brow', cross: true },
+  // Upper ↔ lower lip — rose
+  { a: 'upperLip',  b: 'lowerLip',  color: '#e84870', k: 0.28, label: 'mouth' },
+  // Lip corners ↔ cheeks — rose/soft
+  { a: 'upperLip',  b: 'leftCheek', color: '#e84870', k: 0.08, label: 'mouth' },
+  { a: 'upperLip',  b: 'rightCheek',color: '#e84870', k: 0.08, label: 'mouth' },
+  // Eye ↔ cheek — mint
+  { a: 'leftEye',   b: 'leftCheek', color: '#38d4a0', k: 0.10, label: 'eyes' },
+  { a: 'rightEye',  b: 'rightCheek',color: '#38d4a0', k: 0.10, label: 'eyes' },
+  // Jaw ↔ lip — lilac
+  { a: 'jaw',       b: 'lowerLip',  color: '#c060f0', k: 0.18, label: 'jaw' },
+  // Nose ↔ lips — gold
+  { a: 'nose',      b: 'upperLip',  color: '#f0b840', k: 0.14, label: 'nose' },
+  // Nose ↔ eyes — gold/faint
+  { a: 'nose',      b: 'leftEye',   color: '#f0b840', k: 0.06, label: 'nose' },
+  { a: 'nose',      b: 'rightEye',  color: '#f0b840', k: 0.06, label: 'nose' },
+  // Brow ↔ jaw (dramatic long strings) — lilac faint
+  { a: 'leftBrow',  b: 'jaw',       color: '#c060f0', k: 0.04, label: 'jaw', cross: true },
+  { a: 'rightBrow', b: 'jaw',       color: '#c060f0', k: 0.04, label: 'jaw', cross: true },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VERLET POINT
+// ─────────────────────────────────────────────────────────────────────────────
+class Point {
+  constructor(x, y, id) {
+    this.x = x; this.y = y;
+    this.ox = x; this.oy = y;
+    this.pinned = false;
+    this._id = id;
+    this.color = '#ffffff';
+    this.group = '';
+  }
+  moveTo(x, y) {
+    this.x = x; this.y = y;
+    this.ox = x; this.oy = y;
+  }
+  update(dt) {
+    if (this.pinned) return;
+    const vx = (this.x - this.ox) * 0.84;
+    const vy = (this.y - this.oy) * 0.84;
+    this.ox = this.x; this.oy = this.y;
+    this.x += vx;
+    this.y += vy + 220 * dt * dt;
+    // soft bounds
+    if (this.y > H - 2) { this.y = H - 2; this.oy = this.y + vy * 0.15; }
+    if (this.x < 2) this.x = 2;
+    if (this.x > W - 2) this.x = W - 2;
+  }
+}
+
+// Spring constraint
+class Spring {
+  constructor(a, b, rest, k, colorA, colorB) {
+    this.a = a; this.b = b;
+    this.rest = rest; this.k = k;
+    this.colorA = colorA; this.colorB = colorB;
+  }
+  solve() {
+    const dx = this.b.x - this.a.x, dy = this.b.y - this.a.y;
+    const d = Math.sqrt(dx*dx + dy*dy) || 1e-6;
+    const diff = (d - this.rest) / d * this.k;
+    const cx = dx * diff * 0.5, cy = dy * diff * 0.5;
+    if (!this.a.pinned) { this.a.x += cx; this.a.y += cy; }
+    if (!this.b.pinned) { this.b.x -= cx; this.b.y -= cy; }
+  }
+}
+
+let allPoints = [];
+let allSprings = [];
+
+// Points indexed by id
+let pointMap = new Map();
+
+// Gesture state
+let gestureState = { brow: 0, mouth: 0, eyes: 0, jaw: 0, nose: 0 };
+let gesturePrev  = { brow: 0, mouth: 0, eyes: 0, jaw: 0, nose: 0 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COLOR HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+const GROUP_COLORS = {
+  leftBrow:   '#38a0f0', rightBrow:  '#38a0f0',
+  leftEye:    '#38d4a0', rightEye:   '#38d4a0',
+  upperLip:   '#e84870', lowerLip:   '#e84870',
+  jaw:        '#c060f0',
+  nose:       '#f0b840',
+  leftCheek:  '#f09050', rightCheek: '#f09050',
+};
+
+function lerpHex(a, b, t) {
+  // strip non-hex chars and ensure 6-char clean hex
+  const clean = s => s.replace(/[^0-9a-fA-F]/g, '').slice(0,6).padEnd(6,'0');
+  const ah = clean(a), bh = clean(b);
+  const ar=(parseInt(ah,16)>>16)&255, ag=(parseInt(ah,16)>>8)&255, ab2=parseInt(ah,16)&255;
+  const br=(parseInt(bh,16)>>16)&255, bg=(parseInt(bh,16)>>8)&255, bb2=parseInt(bh,16)&255;
+  return '#' + [
+    Math.round(ar+(br-ar)*t),
+    Math.round(ag+(bg-ag)*t),
+    Math.round(ab2+(bb2-ab2)*t)
+  ].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUILD PHYSICS FROM FACE MESH RESULTS
+// ─────────────────────────────────────────────────────────────────────────────
+let faceDetected = false;
+let lastFaceLandmarks = null;
+
+function lmToXY(lm) {
+  // Mirror X so face matches user expectation
+  return { x: (1 - lm.x) * W, y: lm.y * H };
+}
+
+function buildFromLandmarks(landmarks) {
+  const newPoints = [];
+  const newSprings = [];
+  const oldMap = new Map(allPoints.map(p => [p._id, p]));
+
+  // Create/update anchor points for each group
+  const groupPoints = {};
+  for (const [grp, indices] of Object.entries(FACE_ANCHORS)) {
+    const color = GROUP_COLORS[grp] || '#ffffff';
+    groupPoints[grp] = [];
+    indices.forEach((lmIdx, i) => {
+      const id = `${grp}-${i}`;
+      const pos = lmToXY(landmarks[lmIdx]);
+      let p = oldMap.get(id);
+      if (!p) { p = new Point(pos.x, pos.y, id); }
+      p.pinned = true;
+      p.moveTo(pos.x, pos.y);
+      p.color = color;
+      p.group = grp;
+      newPoints.push(p);
+      groupPoints[grp].push(p);
+    });
+  }
+
+  // ── Intra-group connections (within each feature) ──
+  for (const [grp, pts] of Object.entries(groupPoints)) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i+1];
+      const dx = a.x-b.x, dy = a.y-b.y;
+      const rest = Math.sqrt(dx*dx+dy*dy);
+      newSprings.push(new Spring(a, b, rest, 0.08, a.color, b.color));
+    }
+  }
+
+  // ── Cross-group elastic strings ──
+  STRING_CONFIGS.forEach(cfg => {
+    const ptsA = groupPoints[cfg.a];
+    const ptsB = groupPoints[cfg.b];
+    if (!ptsA || !ptsB) return;
+
+    // Pair up nearest points with free floating midpoint nodes
+    const count = Math.min(ptsA.length, ptsB.length);
+    // Use evenly spaced pairs
+    const step = ptsA.length / count;
+
+    for (let i = 0; i < count; i += Math.max(1, Math.floor(count / 4))) {
+      const a = ptsA[i];
+      const b = ptsB[Math.round(i * ptsB.length / ptsA.length) % ptsB.length];
+      if (!a || !b) continue;
+
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+
+      // 2 free mid-nodes for sag
+      const SEGS = 3;
+      const chain = [a];
+      for (let s = 1; s < SEGS; s++) {
+        const t = s / SEGS;
+        const mx = a.x + (b.x - a.x) * t;
+        const my = a.y + (b.y - a.y) * t + Math.sin(t * Math.PI) * dist * 0.08;
+        const id = `${cfg.a}-${cfg.b}-mid-${i}-${s}`;
+        let mp = oldMap.get(id);
+        if (!mp) { mp = new Point(mx, my, id); }
+        mp.pinned = false;
+        mp.color  = lerpHex(cfg.color, cfg.color, t); // same color
+        newPoints.push(mp);
+        chain.push(mp);
+      }
+      chain.push(b);
+
+      const segLen = dist / SEGS * 1.04;
+      for (let s = 0; s < chain.length - 1; s++) {
+        const t = s / (chain.length - 1);
+        newSprings.push(new Spring(
+          chain[s], chain[s+1],
+          segLen, cfg.k,
+          cfg.color, cfg.color
+        ));
+      }
+    }
+  });
+
+  allPoints = newPoints;
+  allSprings = newSprings;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GESTURE DETECTION
+// ─────────────────────────────────────────────────────────────────────────────
+function detectGestures(lms) {
+  const p = (i) => ({ x: lms[i].x, y: lms[i].y });
+  const dist2D = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  // Brow raise: distance from brow to eye / face height
+  const faceH = dist2D(p(10), p(152)); // top of head to chin
+  const leftBrowY  = (p(70).y + p(107).y) / 2;
+  const leftEyeY   = (p(159).y + p(145).y) / 2;
+  const browEyeDist = (leftEyeY - leftBrowY) / faceH;
+  gestureState.brow = Math.min(1, Math.max(0, (browEyeDist - 0.06) / 0.06));
+
+  // Mouth openness: lip distance / face height
+  const mouthOpen = dist2D(p(13), p(14)) / faceH;
+  gestureState.mouth = Math.min(1, Math.max(0, (mouthOpen - 0.01) / 0.08));
+
+  // Eye openness (avg)
+  const leftEyeOpen  = dist2D(p(159), p(145)) / faceH;
+  const rightEyeOpen = dist2D(p(386), p(374)) / faceH;
+  gestureState.eyes = Math.min(1, ((leftEyeOpen + rightEyeOpen) / 2 - 0.015) / 0.02);
+
+  // Jaw drop (larger than just lip)
+  const jawOpen = dist2D(p(0), p(152)) / faceH;
+  gestureState.jaw = Math.min(1, Math.max(0, (jawOpen - 0.55) / 0.15));
+
+  // Nose scrunch — distance between nose bridge and tip
+  gestureState.nose = Math.min(1, Math.max(0, dist2D(p(6), p(4)) / faceH / 0.12));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  const h = hex.replace('#','');
+  return {
+    r: parseInt(h.slice(0,2),16),
+    g: parseInt(h.slice(2,4),16),
+    b: parseInt(h.slice(4,6),16)
+  };
+}
+
+function drawSpring(s) {
+  const { a, b, colorA, colorB } = s;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const d  = Math.sqrt(dx*dx + dy*dy);
+  const tension = Math.max(0, (d - s.rest) / (s.rest + 1));
+  const alpha = 0.4 + tension * 0.6;
+  const lw = Math.max(0.5, 2.5 - tension * 1.8);
+
+  // Gradient along string
+  const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+  const ca = colorA.startsWith('#') ? colorA : '#ffffff';
+  const cb = colorB.startsWith('#') ? colorB : '#ffffff';
+  grad.addColorStop(0, ca);
+  grad.addColorStop(1, cb);
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'round';
+  ctx.shadowBlur = 6 + tension * 16;
+  ctx.shadowColor = ca;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  // bright white core
+  ctx.globalAlpha = alpha * 0.25;
+  ctx.strokeStyle = '#fffcf5';
+  ctx.lineWidth = lw * 0.25;
+  ctx.shadowBlur = 0;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawNode(p) {
+  if (!p.color || !p.pinned) return; // only show anchor nodes
+  const r = 3.5;
+  ctx.save();
+  ctx.shadowBlur = 14;
+  ctx.shadowColor = p.color;
+  ctx.fillStyle = p.color;
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#fff9ee';
+  ctx.globalAlpha = 0.7;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r*0.38, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Vignette cache
+let vigImg = null;
+function ensureVig() {
+  if (vigImg && vigImg.width === W && vigImg.height === H) return;
+  const oc = document.createElement('canvas');
+  oc.width = W; oc.height = H;
+  const oc2 = oc.getContext('2d');
+  const g = oc2.createRadialGradient(W/2, H/2, H*0.25, W/2, H/2, H*0.9);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.8)');
+  oc2.fillStyle = g;
+  oc2.fillRect(0,0,W,H);
+  vigImg = oc;
+}
+
+let lastT = 0, frameN = 0;
+
+function loop(ts) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((ts - lastT) / 1000, 0.05);
+  lastT = ts;
+  frameN++;
+
+  // Physics
+  const ITERS = 12;
+  for (let i = 0; i < ITERS; i++) {
+    allSprings.forEach(s => s.solve());
+    allPoints.forEach(p => p.update(dt / ITERS));
+  }
+
+  // Clear
+  ctx.fillStyle = 'rgba(3,2,10,0.80)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Fine dot grid
+  ctx.save();
+  ctx.fillStyle = 'rgba(240,232,216,0.04)';
+  const gs = 40;
+  for (let x = gs/2; x < W; x += gs)
+    for (let y = gs/2; y < H; y += gs) {
+      ctx.beginPath(); ctx.arc(x, y, 0.7, 0, Math.PI*2); ctx.fill();
+    }
+  ctx.restore();
+
+  // Face outline (ghost) — faint lines connecting all jaw points
+  if (faceDetected && lastFaceLandmarks) {
+    const CONTOUR = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,
+      148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109,10];
+    ctx.save();
+    ctx.strokeStyle = 'rgba(240,232,216,0.06)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    CONTOUR.forEach((idx, i) => {
+      const lm = lastFaceLandmarks[idx];
+      const x = (1 - lm.x) * W, y = lm.y * H;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw strings
+  allSprings.forEach(s => drawSpring(s));
+
+  // Draw nodes
+  allPoints.forEach(p => drawNode(p));
+
+  // Vignette
+  ensureVig();
+  ctx.drawImage(vigImg, 0, 0);
+
+  // Update gesture chips
+  const THRESH = 0.25;
+  ['brow','mouth','eyes','jaw','nose'].forEach(k => {
+    const el = document.getElementById(`gc-${k}`);
+    if (el) el.classList.toggle('active', gestureState[k] > THRESH);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEDIAPIPE FACE MESH
+// ─────────────────────────────────────────────────────────────────────────────
+function initFaceMesh() {
+  const faceMesh = new FaceMesh({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+  });
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.55,
+  });
+  faceMesh.onResults(results => {
+    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+      const lms = results.multiFaceLandmarks[0];
+      lastFaceLandmarks = lms;
+      faceDetected = true;
+      buildFromLandmarks(lms);
+      detectGestures(lms);
+      statusEl.textContent = 'move your face · raise brows · open mouth · smile';
+      gesturesEl.classList.add('visible');
+    } else {
+      faceDetected = false;
+      allPoints = []; allSprings = [];
+      statusEl.textContent = 'no face detected — look at the camera';
+      gesturesEl.classList.remove('visible');
+    }
+  });
+
+  const cam = new Camera(vid, {
+    onFrame: async () => { await faceMesh.send({ image: vid }); },
+    width: 640, height: 480
+  });
+  cam.start().catch(e => {
+    statusEl.textContent = 'camera error: ' + e.message;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// START
+// ─────────────────────────────────────────────────────────────────────────────
+document.getElementById('startBtn').addEventListener('click', () => {
+  statusEl.textContent = 'loading face model…';
+  document.getElementById('splash').classList.add('gone');
+  hud.classList.add('visible');
+  initFaceMesh();
+  requestAnimationFrame(loop);
+});
+</script>
+</body>
+</html>

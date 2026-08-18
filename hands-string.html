@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>String Play — Hand Tracking</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --string1: #ff6b35;
+    --string2: #ffd23f;
+    --string3: #06ffa5;
+    --string4: #c77dff;
+    --string5: #4cc9f0;
+    --glow1: rgba(255,107,53,0.6);
+    --glow2: rgba(255,210,63,0.6);
+    --glow3: rgba(6,255,165,0.6);
+    --text: #e8e8f0;
+    --muted: #555566;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0.4;
+  }
+
+  header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 50;
+    background: linear-gradient(to bottom, rgba(10,10,15,0.95), transparent);
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.1rem;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--string1), var(--string4));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .status-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-dot.active {
+    background: var(--string3);
+    box-shadow: 0 0 8px var(--glow3);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  #hands-count {
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    transition: color 0.3s;
+  }
+  #hands-count.detected { color: var(--string3); }
+
+  /* Main canvas area */
+  .canvas-wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  #videoEl {
+    position: absolute;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transform: scaleX(-1);
+  }
+
+  #mainCanvas {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    transform: scaleX(-1);
+  }
+
+  /* Overlay UI */
+  #startScreen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    z-index: 60;
+    background: radial-gradient(ellipse at center, rgba(10,10,20,0.92) 0%, rgba(10,10,15,0.98) 100%);
+    transition: opacity 0.6s ease;
+  }
+
+  #startScreen.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .title-block {
+    text-align: center;
+  }
+
+  .title-big {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    letter-spacing: -0.04em;
+    line-height: 0.95;
+    background: linear-gradient(135deg, var(--string1) 0%, var(--string2) 40%, var(--string4) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+
+  .title-sub {
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  /* Animated string preview */
+  .string-preview {
+    width: 260px;
+    height: 80px;
+    position: relative;
+  }
+
+  .btn-start {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 14px 36px;
+    border: 1.5px solid rgba(255,107,53,0.5);
+    background: transparent;
+    color: var(--string1);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+  .btn-start::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--string1);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+    z-index: -1;
+  }
+  .btn-start:hover::before { transform: scaleX(1); }
+  .btn-start:hover { color: var(--bg); border-color: var(--string1); }
+
+  .instructions {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 480px;
+  }
+
+  .instr-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  .instr-dot {
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Mode selector */
+  .mode-selector {
+    display: flex;
+    gap: 8px;
+  }
+
+  .mode-btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    border: 1px solid var(--muted);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .mode-btn.active {
+    border-color: var(--string4);
+    color: var(--string4);
+    box-shadow: 0 0 12px rgba(199,125,255,0.2);
+  }
+
+  /* HUD */
+  #hud {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 16px;
+    z-index: 50;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  #hud.visible { opacity: 1; }
+
+  .hud-chip {
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    padding: 6px 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(10,10,15,0.8);
+    color: var(--muted);
+    backdrop-filter: blur(8px);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .hud-chip:hover, .hud-chip.active {
+    border-color: var(--string3);
+    color: var(--string3);
+  }
+
+  /* Pinch indicator */
+  .pinch-ring {
+    position: absolute;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 2px solid var(--string3);
+    transform: translate(-50%, -50%) scale(0);
+    transition: transform 0.15s ease, opacity 0.15s;
+    pointer-events: none;
+    box-shadow: 0 0 12px var(--glow3);
+    opacity: 0;
+  }
+  .pinch-ring.active {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+
+  #loading {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 70;
+    background: var(--bg);
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+  }
+
+  .loader-bar {
+    width: 200px;
+    height: 2px;
+    background: rgba(255,255,255,0.05);
+    overflow: hidden;
+  }
+  .loader-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--string1), var(--string4));
+    animation: load 1.8s ease forwards;
+  }
+  @keyframes load {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:1.4rem;letter-spacing:-0.02em;background:linear-gradient(135deg,#ff6b35,#c77dff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">STRING PLAY</div>
+  <div class="loader-bar"><div class="loader-fill"></div></div>
+  <div>LOADING HAND TRACKING...</div>
+</div>
+
+<header>
+  <div class="logo">STRING PLAY</div>
+  <div class="status-bar">
+    <div class="status-dot" id="camDot"></div>
+    <span id="hands-count">NO HANDS</span>
+  </div>
+</header>
+
+<div class="canvas-wrap">
+  <video id="videoEl" autoplay playsinline></video>
+  <canvas id="mainCanvas"></canvas>
+</div>
+
+<div id="startScreen">
+  <div class="title-block">
+    <div class="title-big">STRING<br>PLAY</div>
+    <div class="title-sub">hand tracking · interactive strings</div>
+  </div>
+
+  <svg class="string-preview" viewBox="0 0 260 80">
+    <path id="previewString1" d="M20,40 Q80,10 130,40 Q180,70 240,40" stroke="#ff6b35" stroke-width="2" fill="none" opacity="0.8">
+      <animate attributeName="d" values="M20,40 Q80,10 130,40 Q180,70 240,40;M20,40 Q80,70 130,40 Q180,10 240,40;M20,40 Q80,10 130,40 Q180,70 240,40" dur="2s" repeatCount="indefinite"/>
+    </path>
+    <path d="M20,35 Q80,15 130,35 Q180,55 240,35" stroke="#ffd23f" stroke-width="1.5" fill="none" opacity="0.5">
+      <animate attributeName="d" values="M20,35 Q80,15 130,35 Q180,55 240,35;M20,45 Q80,65 130,45 Q180,25 240,45;M20,35 Q80,15 130,35 Q180,55 240,35" dur="2.3s" repeatCount="indefinite"/>
+    </path>
+    <path d="M20,45 Q80,65 130,45 Q180,25 240,45" stroke="#c77dff" stroke-width="1.5" fill="none" opacity="0.5">
+      <animate attributeName="d" values="M20,45 Q80,65 130,45 Q180,25 240,45;M20,45 Q80,25 130,45 Q180,65 240,45;M20,45 Q80,65 130,45 Q180,25 240,45" dur="1.7s" repeatCount="indefinite"/>
+    </path>
+  </svg>
+
+  <div class="mode-selector">
+    <button class="mode-btn active" onclick="selectMode('strings')" id="mode-strings">🎵 STRINGS</button>
+    <button class="mode-btn" onclick="selectMode('elastic')" id="mode-elastic">🔴 ELASTIC</button>
+    <button class="mode-btn" onclick="selectMode('weave')" id="mode-weave">✦ WEAVE</button>
+  </div>
+
+  <button class="btn-start" onclick="startCamera()">ENABLE CAMERA →</button>
+
+  <div class="instructions">
+    <div class="instr-item">
+      <div class="instr-dot" style="background:#ff6b35"></div>
+      PINCH FINGERS TO GRAB STRINGS
+    </div>
+    <div class="instr-item">
+      <div class="instr-dot" style="background:#ffd23f"></div>
+      STRETCH WITH BOTH HANDS
+    </div>
+    <div class="instr-item">
+      <div class="instr-dot" style="background:#06ffa5"></div>
+      WEAVE FINGERS THROUGH LOOPS
+    </div>
+    <div class="instr-item">
+      <div class="instr-dot" style="background:#c77dff"></div>
+      BRING HANDS TOGETHER TO SNAP
+    </div>
+  </div>
+</div>
+
+<div id="hud">
+  <div class="hud-chip active" onclick="setMode('strings')" id="chip-strings">STRINGS</div>
+  <div class="hud-chip" onclick="setMode('elastic')" id="chip-elastic">ELASTIC</div>
+  <div class="hud-chip" onclick="setMode('weave')" id="chip-weave">WEAVE</div>
+  <div class="hud-chip" onclick="resetStrings()">RESET</div>
+</div>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+const video = document.getElementById('videoEl');
+
+let currentMode = 'strings';
+let handsData = [];
+let strings = [];
+let particles = [];
+let animFrame;
+let isRunning = false;
+let frameCount = 0;
+
+// ─────────────────────────────────────────────
+// RESIZE
+// ─────────────────────────────────────────────
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─────────────────────────────────────────────
+// MODE SELECTION
+// ─────────────────────────────────────────────
+function selectMode(m) {
+  currentMode = m;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode-' + m).classList.add('active');
+}
+function setMode(m) {
+  currentMode = m;
+  document.querySelectorAll('.hud-chip').forEach(b => b.classList.remove('active'));
+  document.getElementById('chip-' + m).classList.add('active');
+  resetStrings();
+}
+
+// ─────────────────────────────────────────────
+// STRING PHYSICS
+// ─────────────────────────────────────────────
+class StringPoint {
+  constructor(x, y, pinned=false) {
+    this.x = x; this.y = y;
+    this.ox = x; this.oy = y;
+    this.vx = 0; this.vy = 0;
+    this.pinned = pinned;
+    this.grabbed = false;
+    this.grabFinger = null;
+  }
+  update() {
+    if (this.pinned || this.grabbed) return;
+    this.vy += 0.18; // gravity
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    this.x += this.vx;
+    this.y += this.vy;
+  }
+}
+
+class StringSeg {
+  constructor(color, numPoints = 20) {
+    this.color = color;
+    this.glow = color;
+    this.width = 2.5;
+    this.points = [];
+    this.tension = 0.4;
+    this.elasticity = currentMode === 'elastic' ? 0.12 : 0.35;
+    this.id = Math.random();
+    this.hue = 0; // for weave mode cycling
+    this.init();
+  }
+
+  init() {
+    this.points = [];
+    const W = canvas.width, H = canvas.height;
+    const x1 = W * 0.2 + Math.random() * W * 0.1;
+    const x2 = W * 0.7 + Math.random() * W * 0.1;
+    const y = H * 0.35 + Math.random() * H * 0.2;
+    const n = currentMode === 'elastic' ? 12 : 20;
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const px = x1 + (x2 - x1) * t;
+      const py = y + Math.sin(t * Math.PI) * 30;
+      const pinned = (i === 0 || i === n - 1);
+      this.points.push(new StringPoint(px, py, pinned));
+    }
+  }
+
+  applyConstraints() {
+    const restLen = currentMode === 'elastic'
+      ? canvas.width * 0.06
+      : canvas.width * 0.032;
+
+    for (let iter = 0; iter < 8; iter++) {
+      for (let i = 0; i < this.points.length - 1; i++) {
+        const a = this.points[i];
+        const b = this.points[i + 1];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) continue;
+        const diff = (dist - restLen) / dist;
+        const correction = diff * this.elasticity;
+        if (!a.pinned && !a.grabbed) {
+          a.x += dx * correction;
+          a.y += dy * correction;
+        }
+        if (!b.pinned && !b.grabbed) {
+          b.x -= dx * correction;
+          b.y -= dy * correction;
+        }
+      }
+    }
+  }
+
+  update() {
+    this.points.forEach(p => p.update());
+    this.applyConstraints();
+    if (currentMode === 'weave') this.hue += 0.5;
+  }
+
+  draw() {
+    if (this.points.length < 2) return;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Glow pass
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = currentMode === 'elastic' ? 20 : 12;
+
+    const drawColor = currentMode === 'weave'
+      ? `hsl(${this.hue}, 80%, 65%)`
+      : this.color;
+
+    ctx.strokeStyle = drawColor;
+    ctx.lineWidth = currentMode === 'elastic' ? 5 : 2.5;
+    ctx.globalAlpha = 0.9;
+
+    ctx.beginPath();
+    ctx.moveTo(this.points[0].x, this.points[0].y);
+    for (let i = 1; i < this.points.length - 1; i++) {
+      const mx = (this.points[i].x + this.points[i + 1].x) / 2;
+      const my = (this.points[i].y + this.points[i + 1].y) / 2;
+      ctx.quadraticCurveTo(this.points[i].x, this.points[i].y, mx, my);
+    }
+    const last = this.points[this.points.length - 1];
+    ctx.lineTo(last.x, last.y);
+    ctx.stroke();
+
+    // Bright core
+    if (currentMode !== 'elastic') {
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 0.7;
+      ctx.globalAlpha = 0.5;
+      ctx.stroke();
+    }
+
+    // Endpoint anchors
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    [this.points[0], this.points[this.points.length - 1]].forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = drawColor;
+      ctx.fill();
+    });
+
+    ctx.restore();
+  }
+}
+
+// ─────────────────────────────────────────────
+// PARTICLE SYSTEM (for snaps/plucks)
+// ─────────────────────────────────────────────
+function spawnParticles(x, y, color, count = 10) {
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+    const speed = 2 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.03 + Math.random() * 0.04,
+      size: 2 + Math.random() * 3,
+      color
+    });
+  }
+}
+
+function updateParticles() {
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.1;
+    p.vx *= 0.95;
+    p.life -= p.decay;
+  });
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+// ─────────────────────────────────────────────
+// INIT STRINGS
+// ─────────────────────────────────────────────
+const COLORS = ['#ff6b35', '#ffd23f', '#06ffa5', '#c77dff', '#4cc9f0'];
+
+function initStrings() {
+  const count = currentMode === 'weave' ? 4 : 3;
+  strings = [];
+  for (let i = 0; i < count; i++) {
+    strings.push(new StringSeg(COLORS[i % COLORS.length]));
+  }
+}
+
+function resetStrings() {
+  initStrings();
+  particles = [];
+}
+
+// ─────────────────────────────────────────────
+// HAND → SCREEN COORDS
+// ─────────────────────────────────────────────
+function lm(hand, idx) {
+  // Mirror x because canvas is CSS-mirrored
+  return {
+    x: (1 - hand.landmarks[idx][0]) * canvas.width,
+    y: hand.landmarks[idx][1] * canvas.height,
+    z: hand.landmarks[idx][2]
+  };
+}
+
+function dist2D(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// ─────────────────────────────────────────────
+// FINGER TIPS: 4=thumb, 8=index, 12=middle, 16=ring, 20=pinky
+// ─────────────────────────────────────────────
+const FINGER_TIPS = [4, 8, 12, 16, 20];
+const FINGER_COLORS = ['#ff6b35', '#ffd23f', '#06ffa5', '#c77dff', '#4cc9f0'];
+
+function getFingerTips(hand) {
+  return FINGER_TIPS.map((idx, i) => ({
+    ...lm(hand, idx),
+    finger: i,
+    color: FINGER_COLORS[i]
+  }));
+}
+
+function getPinch(hand) {
+  const thumb = lm(hand, 4);
+  const index = lm(hand, 8);
+  const d = dist2D(thumb, index);
+  const isPinching = d < 40;
+  return {
+    active: isPinching,
+    x: (thumb.x + index.x) / 2,
+    y: (thumb.y + index.y) / 2,
+    strength: Math.max(0, 1 - d / 40)
+  };
+}
+
+// ─────────────────────────────────────────────
+// INTERACT: grab nearest string point
+// ─────────────────────────────────────────────
+const GRAB_RADIUS = 55;
+let lastPinchState = {};
+
+function interactWithStrings() {
+  // Release all
+  strings.forEach(s => s.points.forEach(p => {
+    p.grabbed = false;
+    p.grabFinger = null;
+  }));
+
+  handsData.forEach((hand, hi) => {
+    const pinch = getPinch(hand);
+    const tips = getFingerTips(hand);
+    const handKey = hi;
+
+    if (pinch.active) {
+      if (!lastPinchState[handKey]) {
+        // Just pinched — snap particles
+        spawnParticles(pinch.x, pinch.y, FINGER_COLORS[0], 6);
+      }
+      lastPinchState[handKey] = true;
+
+      // Find closest string point
+      let best = null, bestDist = GRAB_RADIUS;
+      strings.forEach(s => {
+        s.points.forEach((p, pi) => {
+          if (p.pinned) return;
+          const d = dist2D(p, pinch);
+          if (d < bestDist) {
+            bestDist = d;
+            best = p;
+          }
+        });
+      });
+
+      if (best) {
+        best.grabbed = true;
+        best.x = pinch.x;
+        best.y = pinch.y;
+      }
+    } else {
+      if (lastPinchState[handKey]) {
+        // Released — pluck effect
+        spawnParticles(pinch.x, pinch.y, FINGER_COLORS[1], 8);
+      }
+      lastPinchState[handKey] = false;
+    }
+
+    // Non-pinch: finger tips push strings (collision)
+    tips.forEach(tip => {
+      strings.forEach(s => {
+        s.points.forEach(p => {
+          if (p.grabbed || p.pinned) return;
+          const d = dist2D(p, tip);
+          if (d < 25) {
+            const nx = (p.x - tip.x) / (d || 1);
+            const ny = (p.y - tip.y) / (d || 1);
+            p.vx += nx * 3;
+            p.vy += ny * 3;
+          }
+        });
+      });
+    });
+  });
+
+  // Clean up disconnected hands
+  Object.keys(lastPinchState).forEach(k => {
+    if (parseInt(k) >= handsData.length) delete lastPinchState[k];
+  });
+}
+
+// ─────────────────────────────────────────────
+// DRAW HANDS
+// ─────────────────────────────────────────────
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[0,17],[17,18],[18,19],[19,20]
+];
+
+function drawHands() {
+  handsData.forEach((hand, hi) => {
+    const pinch = getPinch(hand);
+
+    // Skeleton
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    HAND_CONNECTIONS.forEach(([a, b]) => {
+      const pa = lm(hand, a), pb = lm(hand, b);
+      ctx.beginPath();
+      ctx.moveTo(pa.x, pa.y);
+      ctx.lineTo(pb.x, pb.y);
+      ctx.stroke();
+    });
+
+    // Finger tips
+    getFingerTips(hand).forEach((tip, fi) => {
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = tip.color;
+      ctx.shadowColor = tip.color;
+      ctx.shadowBlur = 12;
+      ctx.fill();
+    });
+
+    // Pinch indicator
+    if (pinch.active) {
+      ctx.beginPath();
+      ctx.arc(pinch.x, pinch.y, 18 * pinch.strength, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(6,255,165,${pinch.strength})`;
+      ctx.shadowColor = '#06ffa5';
+      ctx.shadowBlur = 20;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  });
+}
+
+// ─────────────────────────────────────────────
+// BACKGROUND
+// ─────────────────────────────────────────────
+function drawBackground() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(10,10,15,0.82)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.lineWidth = 1;
+  const gs = 60;
+  for (let x = 0; x < canvas.width; x += gs) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+  }
+  for (let y = 0; y < canvas.height; y += gs) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────
+// MAIN LOOP
+// ─────────────────────────────────────────────
+function loop() {
+  if (!isRunning) return;
+  frameCount++;
+  drawBackground();
+
+  interactWithStrings();
+  strings.forEach(s => s.update());
+  strings.forEach(s => s.draw());
+
+  updateParticles();
+  drawParticles();
+
+  drawHands();
+
+  animFrame = requestAnimationFrame(loop);
+}
+
+// ─────────────────────────────────────────────
+// MEDIAPIPE HANDS
+// ─────────────────────────────────────────────
+let hands, camera;
+
+function onResults(results) {
+  handsData = results.multiHandLandmarks || [];
+
+  const dot = document.getElementById('camDot');
+  const countEl = document.getElementById('hands-count');
+
+  if (handsData.length > 0) {
+    dot.classList.add('active');
+    countEl.classList.add('detected');
+    countEl.textContent = handsData.length === 1 ? '1 HAND' : `${handsData.length} HANDS`;
+  } else {
+    dot.classList.remove('active');
+    countEl.classList.remove('detected');
+    countEl.textContent = 'NO HANDS';
+  }
+}
+
+async function startCamera() {
+  document.getElementById('startScreen').classList.add('hidden');
+
+  initStrings();
+  isRunning = true;
+  loop();
+
+  document.getElementById('hud').classList.add('visible');
+
+  try {
+    hands = new Hands({
+      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6
+    });
+
+    hands.onResults(onResults);
+
+    camera = new Camera(video, {
+      onFrame: async () => {
+        await hands.send({ image: video });
+      },
+      width: 1280,
+      height: 720
+    });
+
+    await camera.start();
+    document.getElementById('camDot').classList.add('active');
+
+  } catch (e) {
+    console.warn('Camera error:', e);
+    document.getElementById('hands-count').textContent = 'CAM ERROR';
+    // Still run physics-only demo with mouse
+    enableMouseFallback();
+  }
+}
+
+// ─────────────────────────────────────────────
+// MOUSE FALLBACK
+// ─────────────────────────────────────────────
+function enableMouseFallback() {
+  let mouseDown = false;
+  let mousePos = { x: 0, y: 0 };
+
+  canvas.addEventListener('mousedown', () => { mouseDown = true; });
+  canvas.addEventListener('mouseup', () => { mouseDown = false; });
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    mousePos.x = e.clientX - rect.left;
+    mousePos.y = e.clientY - rect.top;
+
+    if (mouseDown) {
+      let best = null, bestDist = GRAB_RADIUS;
+      strings.forEach(s => s.points.forEach(p => {
+        if (p.pinned) return;
+        const dx = p.x - mousePos.x, dy = p.y - mousePos.y;
+        const d = Math.sqrt(dx*dx+dy*dy);
+        if (d < bestDist) { bestDist = d; best = p; }
+      }));
+      if (best) { best.grabbed = true; best.x = mousePos.x; best.y = mousePos.y; }
+    } else {
+      strings.forEach(s => s.points.forEach(p => p.grabbed = false));
+      // Hover push
+      strings.forEach(s => s.points.forEach(p => {
+        const dx = p.x - mousePos.x, dy = p.y - mousePos.y;
+        const d = Math.sqrt(dx*dx+dy*dy);
+        if (d < 30) { p.vx += (dx/d)*2; p.vy += (dy/d)*2; }
+      }));
+    }
+  });
+
+  // Touch support
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const tx = touch.clientX - rect.left;
+    const ty = touch.clientY - rect.top;
+    strings.forEach(s => s.points.forEach(p => {
+      if (p.pinned) return;
+      const dx = p.x - tx, dy = p.y - ty;
+      const d = Math.sqrt(dx*dx+dy*dy);
+      if (d < GRAB_RADIUS) { p.grabbed = true; p.x = tx; p.y = ty; }
+    }));
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', () => {
+    strings.forEach(s => s.points.forEach(p => p.grabbed = false));
+  });
+
+  document.getElementById('hands-count').textContent = 'MOUSE MODE';
+}
+
+// ─────────────────────────────────────────────
+// LOADING DISMISS
+// ─────────────────────────────────────────────
+setTimeout(() => {
+  const loading = document.getElementById('loading');
+  loading.style.transition = 'opacity 0.5s';
+  loading.style.opacity = '0';
+  setTimeout(() => loading.remove(), 500);
+}, 1800);
+</script>
+</body>
+</html>
